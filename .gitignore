@@ -1,0 +1,58 @@
+# Environment and secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Audio/Video files
+sounds/*.wav
+sounds/*.mp3
+sounds/*.mp4
+sounds/*.avi
+*.wav
+*.mp3
+*.mp4
+*.avi
+
+# Logs and temporary files
+logs/
+conversation_logs/
+*.log
+*.jpg
+*.png
+!franky.png
+*.jpeg
+
+# Sounds (project specific)
+sounds copy/
+# Note: sounds/ folder is tracked but contents are ignored above (sounds/*.mp3, etc.)
+
+# Experiments and test files
+experiments/
+
+# Compiled binaries
+*.dylib
+*.so
+*.dll
+xvf_host

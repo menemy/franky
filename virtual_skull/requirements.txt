@@ -1,0 +1,15 @@
+# 3D Model Loading and Rendering
+trimesh>=3.23.0
+pyglet>=2.0.0
+pillow>=10.0.0
+
+# OpenGL (version managed by dependencies)
+PyOpenGL
+PyOpenGL-accelerate
+glfw>=2.6.0
+
+# MQTT for communication with Franky
+paho-mqtt>=1.6.1
+
+# Math and utilities
+numpy>=1.24.0
