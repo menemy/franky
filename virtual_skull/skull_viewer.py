@@ -78,12 +78,12 @@ class SkullViewer:
                 for name, geometry in self.scene.geometry.items():
                     print(f"   - {name}: {len(geometry.vertices)} vertices")
 
-                    # Object_10 is the lower jaw (more vertices)
-                    # Object_0 is the upper skull
-                    if 'Object_10' in name or 'lower' in name.lower() or 'mandible' in name.lower():
+                    # Object_10.001 is the lower jaw (more vertices)
+                    # Object_0.001 is the upper skull
+                    if 'Object_10' in name or 'LowerJaw' in name or 'lower' in name.lower() or 'mandible' in name.lower():
                         self.lower_jaw_mesh = geometry
                         print(f"   ✅ Found lower jaw: {name}")
-                    elif 'Object_0' in name or 'upper' in name.lower() or 'skull' in name.lower():
+                    elif 'Object_0' in name or 'UpperSkull' in name or 'upper' in name.lower() or 'skull' in name.lower():
                         self.upper_jaw_mesh = geometry
                         print(f"   ✅ Found upper jaw: {name}")
 

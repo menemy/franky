@@ -10,28 +10,38 @@ This module provides a realistic 3D skull with animated jaw and glowing eyes, sy
 - MQTT integration for real-time synchronization
 - Smooth animations at 60 FPS
 
+## Quick Start
+
+```bash
+cd virtual_skull
+./run_simple.sh
+```
+
+This will open a 3D viewer with the skull and red glowing eyes!
+
 ## Setup
 
 ### 1. Install Dependencies
 
+**IMPORTANT:** Use pyglet 1.5.x (not 2.x) for compatibility:
+
 ```bash
-pip3 install trimesh pyglet pyrender paho-mqtt glfw PyOpenGL
+pip3 install trimesh "pyglet<2" numpy paho-mqtt
 ```
 
-### 2. Download Skull Model
+### 2. Model Status
 
-**Option A: Sketchfab (Recommended)**
+✅ **The skull model is already processed and ready to use!**
 
-1. Download from: https://sketchfab.com/3d-models/skull-downloadable-1a9db900738d44298b0bc59f68123393
-2. License: CC Attribution
-3. Format: Download as `.glb` or `.obj`
-4. Save to `virtual_skull/models/skull_original.glb`
+The repository includes `models/skull_separated.glb` (1.5 MB) with:
+- **Cranium** - Upper skull (34.6K vertices)
+- **Mandible** - Lower jaw (3.3K vertices)
+- **Red glowing eyes** - Two spheres with emission material (symmetric)
+- **Properly separated** - Cranium and mandible are separate objects for jaw animation
 
-**Option B: Alternative Model**
+**No Blender processing needed** - just run the viewer!
 
-The project includes `the_skull_complex.glb` (33MB, 21 objects) which has pre-separated parts but complex naming. For most users, processing `skull_original.glb` in Blender is simpler and more predictable.
-
-### 3. Process Model in Blender
+### 3. Optional: Process Your Own Model
 
 **Open Blender and import the skull:**
 
@@ -160,10 +170,16 @@ mqtt_client.publish("franky/speaking", "1" if speaking else "0")
 - **Speaking:** Bright red (RGB: 1.0, 0.0, 0.0)
 - **Implementation:** Emissive material or simple spheres
 
-## License
+## License & Attribution
 
-- Original skull models: CC0 or CC-BY (check source)
-- Code: Same as Franky project license
+**3D Skull Model:**
+- Model: "CT Derived Human Skeleton" from Sketchfab
+- Author: https://sketchfab.com/3d-models/ct-derived-human-skeleton-7235c83248574ce986dd9e8b35159afa
+- License: CC Attribution (CC-BY 4.0)
+- Modifications: Extracted cranium and mandible, added red emission eyes
+
+**Code:**
+- Same as Franky project license
 
 ## Troubleshooting
 

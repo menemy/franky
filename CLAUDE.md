@@ -33,11 +33,11 @@ arduino-cli upload -p /dev/cu.usbmodem1101 --fqbn esp32:esp32:XIAO_ESP32S3
 
 ### Audio Configuration
 
-- **Sample rate:** 16 kHz
+- **Sample rate:** 16 kHz between ESP32 and bot (resampled to 24 kHz for OpenAI)
 - **I2S format:** 32-bit stereo (XMOS with AEC/AGC/beamforming)
-- **UDP format:** 16-bit mono
-- **Frame size:** 20ms (320 samples)
-- **Speaker volume:** 0.5 (50%) - required for AEC calibration
+- **UDP format:** 16-bit mono PCM frames
+- **Frame size:** 40ms (640 samples, 1280 bytes)
+- **Speaker volume:** 0.2 (20%) default; adjust via `franky/volume`
 
 ### Network Setup
 
@@ -46,7 +46,7 @@ arduino-cli upload -p /dev/cu.usbmodem1101 --fqbn esp32:esp32:XIAO_ESP32S3
 - **UDP ports:**
   - 5001: ESP32 sends mic audio
   - 5002: ESP32 receives speaker audio
-- **MQTT:** 192.168.1.100:1883 (for jaw control)
+- **MQTT:** 192.168.1.100:1883 (jaw, eyes, volume topics)
 
 ## Python Voice Bot
 
@@ -74,8 +74,8 @@ MQTT_PORT=1883
 
 ### Architecture
 
-- **ESP32 → Bot:** UDP mic audio (16-bit mono, 640 bytes/20ms)
-- **Bot → ESP32:** UDP speaker audio (16-bit mono, 640 bytes/20ms)
+- **ESP32 → Bot:** UDP mic audio (16-bit mono, 1280 bytes/40ms)
+- **Bot → ESP32:** UDP speaker audio (16-bit mono, 1280 bytes/40ms)
 - **Bot → OpenAI:** 24kHz PCM16 (resampled from 16kHz)
 - **OpenAI → Bot:** 24kHz PCM16 (resampled to 16kHz)
-- **MQTT:** Jaw position control only
+- **MQTT:** Jaw position, LED eyes, and output volume topics

@@ -24,4 +24,11 @@ fi
 
 echo ""
 echo "Starting viewer..."
-python3 skull_viewer_simple.py
+
+# Use virtual environment if available
+if [ -f "../.venv/bin/python3" ]; then
+    echo "Using virtual environment..."
+    ../.venv/bin/python3 skull_viewer_final.py
+else
+    python3 skull_viewer_final.py
+fi
