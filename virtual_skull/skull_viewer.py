@@ -6,12 +6,12 @@ Loads realistic skull model and animates jaw synchronized with speech
 
 import os
 import math
-import struct
 import numpy as np
 import trimesh
 import pyglet
 from pyglet import gl
 from pyglet.math import Mat4, Vec3
+from pyglet.graphics.shader import Shader, ShaderProgram
 import paho.mqtt.client as mqtt
 
 
@@ -234,49 +234,15 @@ class SkullViewer:
 
     def create_shader_program(self, vertex_src, fragment_src):
         """Compile and link shaders"""
-        # Compile vertex shader
-        vertex_shader = gl.glCreateShader(gl.GL_VERTEX_SHADER)
-        gl.glShaderSource(vertex_shader, 1, [vertex_src.encode()], None)
-        gl.glCompileShader(vertex_shader)
-
-        # Check vertex shader
-        success = gl.GLint()
-        gl.glGetShaderiv(vertex_shader, gl.GL_COMPILE_STATUS, success)
-        if not success:
-            log = gl.glGetShaderInfoLog(vertex_shader)
-            print(f"❌ Vertex shader compilation failed: {log.decode() if isinstance(log, bytes) else log}")
+        try:
+            vertex_shader = Shader(vertex_src, 'vertex')
+            fragment_shader = Shader(fragment_src, 'fragment')
+            program = ShaderProgram(vertex_shader, fragment_shader)
+            print("✅ Shaders compiled successfully")
+            return program
+        except Exception as e:
+            print(f"❌ Shader compilation failed: {e}")
             return None
-
-        # Compile fragment shader
-        fragment_shader = gl.glCreateShader(gl.GL_FRAGMENT_SHADER)
-        gl.glShaderSource(fragment_shader, 1, [fragment_src.encode()], None)
-        gl.glCompileShader(fragment_shader)
-
-        # Check fragment shader
-        gl.glGetShaderiv(fragment_shader, gl.GL_COMPILE_STATUS, success)
-        if not success:
-            log = gl.glGetShaderInfoLog(fragment_shader)
-            print(f"❌ Fragment shader compilation failed: {log.decode() if isinstance(log, bytes) else log}")
-            return None
-
-        # Link program
-        program = gl.glCreateProgram()
-        gl.glAttachShader(program, vertex_shader)
-        gl.glAttachShader(program, fragment_shader)
-        gl.glLinkProgram(program)
-
-        # Check program
-        gl.glGetProgramiv(program, gl.GL_LINK_STATUS, success)
-        if not success:
-            log = gl.glGetProgramInfoLog(program)
-            print(f"❌ Shader program linking failed: {log.decode() if isinstance(log, bytes) else log}")
-            return None
-
-        gl.glDeleteShader(vertex_shader)
-        gl.glDeleteShader(fragment_shader)
-
-        print("✅ Shaders compiled successfully")
-        return program
 
     def render(self):
         """Render the skull"""
@@ -285,7 +251,7 @@ class SkullViewer:
         if not self.shader:
             return
 
-        gl.glUseProgram(self.shader)
+        self.shader.use()
 
         # Setup matrices
         aspect = self.window.width / self.window.height
@@ -298,15 +264,15 @@ class SkullViewer:
         base_model = base_model.rotate(-math.pi/2 + math.radians(20), Vec3(1, 0, 0))  # -90° + 20° tilt
 
         # Set uniforms
-        self.set_mat4(self.shader, "projection", projection)
-        self.set_mat4(self.shader, "view", view)
-        self.set_vec3(self.shader, "lightPos", Vec3(5, 5, 10))
-        self.set_vec3(self.shader, "viewPos", self.camera_pos)
-        self.set_vec3(self.shader, "objectColor", Vec3(0.9, 0.9, 0.85))  # Bone white
+        self.shader['projection'] = projection
+        self.shader['view'] = view
+        self.shader['lightPos'] = (5.0, 5.0, 10.0)
+        self.shader['viewPos'] = (self.camera_pos.x, self.camera_pos.y, self.camera_pos.z)
+        self.shader['objectColor'] = (0.9, 0.9, 0.85)
 
         # Draw upper jaw
         if self.upper_jaw_vao:
-            self.set_mat4(self.shader, "model", base_model)
+            self.shader['model'] = base_model
             gl.glBindVertexArray(self.upper_jaw_vao)
             gl.glDrawElements(gl.GL_TRIANGLES, self.upper_jaw_count, gl.GL_UNSIGNED_INT, None)
 
@@ -315,24 +281,12 @@ class SkullViewer:
             jaw_angle = math.radians(self.jaw_open_amount * self.max_jaw_angle)
             jaw_model = base_model @ Mat4.from_rotation(jaw_angle, Vec3(1, 0, 0))
 
-            self.set_mat4(self.shader, "model", jaw_model)
+            self.shader['model'] = jaw_model
             gl.glBindVertexArray(self.lower_jaw_vao)
             gl.glDrawElements(gl.GL_TRIANGLES, self.lower_jaw_count, gl.GL_UNSIGNED_INT, None)
 
         gl.glBindVertexArray(0)
-        gl.glUseProgram(0)
-
-    def set_mat4(self, program, name, matrix):
-        """Set mat4 uniform"""
-        location = gl.glGetUniformLocation(program, name.encode())
-        # Convert to column-major array
-        m = (gl.GLfloat * 16)(*matrix)
-        gl.glUniformMatrix4fv(location, 1, gl.GL_FALSE, m)
-
-    def set_vec3(self, program, name, vec):
-        """Set vec3 uniform"""
-        location = gl.glGetUniformLocation(program, name.encode())
-        gl.glUniform3f(location, vec.x, vec.y, vec.z)
+        self.shader.stop()
 
     def update(self, dt):
         """Update animation state"""
