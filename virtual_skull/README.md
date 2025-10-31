@@ -93,25 +93,19 @@ For better eye glow effect:
 ```
 virtual_skull/
 ├── README.md                    # This file
-├── BLENDER_GUIDE.md             # Detailed Blender instructions
-├── SUMMARY.md                   # Implementation summary
-├── skull_viewer.py              # New 3D model-based viewer
-├── jaw_viewer.py                # Legacy simple geometry viewer
-├── jaw_viewer_process.py        # Legacy MQTT viewer
-├── blender_separate_jaw.py      # Automated jaw separation
-├── run_viewer.sh                # Quick launcher
+├── skull_viewer.py              # 3D skull viewer with modern OpenGL shaders
+├── run_simple.sh                # Quick launcher
 ├── requirements.txt             # Python dependencies
 └── models/
-    ├── skull_original.glb       # Main model (4MB, good quality)
-    ├── the_skull_complex.glb    # Alternative model (33MB, complex)
-    └── skull_separated.glb      # Processed model (create in Blender)
+    ├── skull_separated.glb      # Processed model with jaw animation (ready to use)
+    └── the_skull_complex.glb    # Alternative complex model
+
+../experiments/                  # Legacy experimental code (moved to root)
 ```
 
 ## Usage
 
 ### Run the Skull Viewer
-
-**Option 1: Simple Viewer (Quick Start - No Blender Needed!)**
 
 ```bash
 cd virtual_skull
@@ -119,26 +113,10 @@ cd virtual_skull
 ```
 
 Features:
-- ✅ Full 3D skull rendering
-- ✅ Glowing red eyes when speaking
-- ✅ Auto-rotation
+- ✅ Full 3D skull rendering with modern OpenGL shaders
+- ✅ Animated jaw (60° rotation)
 - ✅ MQTT sync with Franky
-- ⚠️ No jaw animation (model not separated)
-
-**Option 2: Advanced Viewer (With Jaw Animation)**
-
-Requires Blender processing first:
-
-```bash
-cd virtual_skull
-./run_viewer.sh
-```
-
-Features:
-- ✅ Full 3D skull + animated jaw (60° rotation)
-- ✅ Glowing red eyes when speaking
-- ✅ Auto-rotation
-- ✅ MQTT sync with Franky
+- ✅ No auto-rotation (static camera view)
 
 The viewer will:
 - Connect to MQTT broker at localhost:1883
@@ -196,12 +174,10 @@ mqtt_client.publish("franky/speaking", "1" if speaking else "0")
 - Check MQTT connection: `franky/speaking` topic
 - Verify emission material in model
 
-## Alternative: Simple Viewer
+## Technical Details
 
-If you don't want to process a 3D model, use the legacy simple geometry viewer:
-
-```bash
-python3 jaw_viewer_process.py
-```
-
-This uses basic OpenGL primitives (cubes, spheres) instead of a realistic model.
+The skull viewer uses modern OpenGL 3.3 Core Profile with:
+- GLSL 330 vertex and fragment shaders
+- Phong lighting model (ambient + diffuse + specular)
+- VAO/VBO/EBO architecture for efficient mesh rendering
+- Real-time jaw animation synchronized via MQTT
