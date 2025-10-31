@@ -19,8 +19,6 @@
 
 https://github.com/user-attachments/assets/a5666c29-cffe-434e-b68e-94e56bf40a9a
 
-*Watch Franky in action!* 🎬
-
 </td>
 </tr>
 </table>
