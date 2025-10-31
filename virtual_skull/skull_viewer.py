@@ -108,18 +108,28 @@ class SkullViewer:
 
     def setup_window(self):
         """Setup pyglet window and OpenGL"""
+        # Create window without projection shaders (compatible with legacy OpenGL)
         self.window = pyglet.window.Window(
             width=800,
             height=800,
             caption="Franky's Skull",
-            resizable=True
+            resizable=True,
+            style=pyglet.window.Window.WINDOW_STYLE_DEFAULT
         )
+
+        # Disable pyglet's automatic projection setup
+        self.window.projection = pyglet.math.Mat4()
 
         @self.window.event
         def on_draw():
             self.render()
 
-        # Setup OpenGL - simple rendering without lighting
+        @self.window.event
+        def on_resize(width, height):
+            glViewport(0, 0, width, height)
+            return pyglet.event.EVENT_HANDLED
+
+        # Setup OpenGL - simple depth testing only
         glEnable(GL_DEPTH_TEST)
 
         # Background color - dark purple
@@ -203,7 +213,8 @@ class SkullViewer:
 
         # Rotate view
         glRotatef(-90, 1, 0, 0)  # Rotate to face forward
-        glRotatef(self.rotation_y, 0, 0, 1)  # Auto-rotate
+        glRotatef(20, 1, 0, 0)   # Tilt skull 20° up
+        glRotatef(self.rotation_y, 0, 0, 1)  # Auto-rotate (disabled)
 
         # Scale model to fit view
         glScalef(0.01, 0.01, 0.01)  # Adjust based on model scale
@@ -232,8 +243,8 @@ class SkullViewer:
 
     def update(self, dt):
         """Update animation state"""
-        # Auto-rotate
-        self.rotation_y += dt * 20
+        # Auto-rotate disabled
+        pass
 
     def run(self):
         """Main application loop"""
