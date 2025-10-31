@@ -187,13 +187,9 @@ Want the complete experience? Build a physical animatronic skull with moving jaw
 - ESP32 or Arduino board (XIAO ESP32-S3 recommended)
 - Servo motor for jaw (SG90 or MG90S) or simple DC motor
 - LED eyes (5mm red LEDs)
-- **Halloween skull decoration** - Where to buy:
-  - [Temu](https://www.temu.com) - Budget plastic skulls
-  - Dollar Store - Easy to modify plastic skulls
-  - [Spirit Halloween](https://www.spirithalloween.com) - Animatronic skulls with mounting points
-  - Amazon - "Life-Size Human Skull" decorations
-  - Craft stores - Lightweight foam skulls
-  - **Tip:** Look for skulls with removable/articulated jaws!
+- Halloween skull decoration - Examples:
+  - [Skull option 1](https://www.temu.com/goods_snapshot.html?goods_id=601102810850226)
+  - [Skull option 2](https://www.temu.com/goods_snapshot.html?goods_id=601099639422606)
 - Power supply (5V 2A)
 - Wires and breadboard
 
