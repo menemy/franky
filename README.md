@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="franky.png" width="400" alt="Franky the Halloween Skull">
-
 # 🎃 FRANKY 💀
 ### *The AI-Powered Halloween Talking Skull*
 
@@ -12,9 +10,20 @@
 
 ---
 
+<table>
+<tr>
+<td width="50%">
+<img src="franky.png" width="100%" alt="Franky the Halloween Skull">
+</td>
+<td width="50%">
+
 https://github.com/user-attachments/assets/a5666c29-cffe-434e-b68e-94e56bf40a9a
 
 *Watch Franky in action!* 🎬
+
+</td>
+</tr>
+</table>
 
 ---
 
