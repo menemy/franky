@@ -1,5 +1,8 @@
 # Environment and secrets
 .env
+tinytuya.json
+devices.json
+snapshot.json
 
 # Python
 __pycache__/
