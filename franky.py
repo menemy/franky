@@ -27,6 +27,21 @@ except ImportError:
     PEDALBOARD_AVAILABLE = False
     print("⚠️  Pedalboard not installed. Audio effects disabled. Install with: pip install pedalboard")
 
+try:
+    from meross_iot.http_api import MerossHttpClient
+    from meross_iot.manager import MerossManager
+    MEROSS_AVAILABLE = True
+except ImportError:
+    MEROSS_AVAILABLE = False
+    print("⚠️  meross-iot not installed. Smart device control disabled. Install with: pip install meross-iot")
+
+try:
+    import tinytuya
+    TINYTUYA_AVAILABLE = True
+except ImportError:
+    TINYTUYA_AVAILABLE = False
+    print("⚠️  tinytuya not installed. Smart light control disabled. Install with: pip install tinytuya")
+
 load_dotenv()
 
 class RealtimeVoiceBotUDP:
@@ -47,8 +62,19 @@ class RealtimeVoiceBotUDP:
         self.log_conversation = log_conversation
 
         # Camera setup (only if enabled)
-        self.camera_url = os.getenv("CAMERA_RTSP_STREAM") if enable_camera else None
-        if not enable_camera:
+        self.use_webcam = os.getenv("USE_WEBCAM", "false").lower() == "true"
+        self.save_camera_screenshots = os.getenv("SAVE_CAMERA_SCREENSHOTS", "false").lower() == "true"
+        if enable_camera:
+            if self.use_webcam:
+                # Allow custom webcam index (default 0, but can be 1, 2, etc.)
+                webcam_index = int(os.getenv("WEBCAM_INDEX", "0"))
+                self.camera_url = webcam_index
+                print(f"📷 Using webcam (device {webcam_index})")
+            else:
+                self.camera_url = os.getenv("CAMERA_RTSP_STREAM")
+                if not self.camera_url:
+                    print("⚠️  Camera enabled but no RTSP stream configured")
+        else:
             self.camera_url = None
 
         # Audio effects setup
@@ -118,6 +144,29 @@ class RealtimeVoiceBotUDP:
             self.conversation_log_file = os.path.join(self.conversation_logs_dir, f"conversation_{timestamp}.json")
             self.conversation_log = []
             print(f"📝 Conversation logging enabled: {self.conversation_log_file}")
+
+        # Audio device selection for speaker mode
+        self.audio_input_device = None  # None = default
+        self.audio_output_device = None  # None = default
+
+        if self.output_mode == "speakers":
+            # Check for custom audio devices
+            input_device_str = os.getenv("AUDIO_INPUT_DEVICE")
+            output_device_str = os.getenv("AUDIO_OUTPUT_DEVICE")
+
+            if input_device_str:
+                try:
+                    self.audio_input_device = int(input_device_str)
+                    print(f"🎤 Using custom input device: {self.audio_input_device}")
+                except ValueError:
+                    print(f"⚠️  Invalid AUDIO_INPUT_DEVICE: {input_device_str}, using default")
+
+            if output_device_str:
+                try:
+                    self.audio_output_device = int(output_device_str)
+                    print(f"🔊 Using custom output device: {self.audio_output_device}")
+                except ValueError:
+                    print(f"⚠️  Invalid AUDIO_OUTPUT_DEVICE: {output_device_str}, using default")
 
         # Audio I/O setup based on output mode
         if self.output_mode == "esp32_udp":
@@ -212,6 +261,50 @@ class RealtimeVoiceBotUDP:
         # Current voice
         self.current_voice = "alloy"
 
+        # Meross smart device setup
+        self.meross_enabled = os.getenv("ENABLE_MEROSS_CONTROL", "false").lower() == "true"
+        self.meross_manager = None
+        self.meross_http_client = None
+        self.meross_email = os.getenv("MEROSS_EMAIL")
+        self.meross_password = os.getenv("MEROSS_PASSWORD")
+        self.aurora_device_name = "Aurora night light"
+
+        if not self.meross_enabled:
+            print("⚠️  Meross smart device control disabled (ENABLE_MEROSS_CONTROL=false)")
+        elif MEROSS_AVAILABLE and self.meross_email and self.meross_password:
+            print("📱 Meross credentials found - smart device control enabled")
+        else:
+            if not MEROSS_AVAILABLE:
+                print("⚠️  Meross smart device control disabled (library not installed)")
+            elif not self.meross_email or not self.meross_password:
+                print("⚠️  Meross smart device control disabled (credentials not in .env)")
+            self.meross_enabled = False
+
+        # Tuya/Smart Life device setup
+        self.flood_light_enabled = os.getenv("ENABLE_FLOOD_LIGHT_CONTROL", "false").lower() == "true"
+        self.flood_light = None
+        self.flood_device_id = os.getenv("FLOOD_LIGHT_DEVICE_ID")
+        self.flood_ip = os.getenv("FLOOD_LIGHT_IP")
+        self.flood_key = os.getenv("FLOOD_LIGHT_LOCAL_KEY")
+
+        if not self.flood_light_enabled:
+            print("⚠️  Smart Flood Light control disabled (ENABLE_FLOOD_LIGHT_CONTROL=false)")
+        elif TINYTUYA_AVAILABLE and self.flood_device_id and self.flood_ip and self.flood_key:
+            print("💡 Smart Flood Light credentials found - color light control enabled")
+            # Initialize device
+            self.flood_light = tinytuya.BulbDevice(
+                dev_id=self.flood_device_id,
+                address=self.flood_ip,
+                local_key=self.flood_key,
+                version=3.5
+            )
+        else:
+            if not TINYTUYA_AVAILABLE:
+                print("⚠️  Smart Flood Light control disabled (tinytuya not installed)")
+            elif not self.flood_device_id or not self.flood_ip or not self.flood_key:
+                print("⚠️  Smart Flood Light control disabled (credentials not in .env)")
+            self.flood_light_enabled = False
+
         # Build interaction start instructions based on camera availability
         if self.enable_camera:
             interaction_start = """## Start of Each Interaction (strict sequence)
@@ -302,6 +395,20 @@ If guests are small kids, give hint: "Let's say together: Trick or… (pause)".
 ## Pauses and Sound
 - Keep 0.5-1.0s pauses before punchline/"BOO!" for suspense.
 - If **play_sfx** available: can request "creak", "owl", "witch_laugh". If not — imitate with voice.
+
+## Lighting Effects for Atmosphere
+You can control colored lights to enhance the spooky atmosphere! Use lighting to amplify scares and create mood:
+- **UV Light (Aurora):** Blinking UV creates ghostly glowing effects. Use for mysterious/scary moments.
+- **Flood Light (RGB):** Can set single colors or create sequences:
+  - Red: Danger, demons, scary moments
+  - Blue: Ghost, cold, eerie atmosphere
+  - Purple: Witch, magic, mystical
+  - Orange: Halloween, pumpkin glow
+  - Color sequences: Red-white-red-white for police/alarm effect, or gradual color changes for atmosphere
+  - Blinking: Fast blinking for scares, slow for mystery
+- **When to use:** During scary stories, before "BOO!", during mini-games, to match voice effects
+- **Keep it short:** 5-10 seconds of effects, then return to normal or subtle lighting
+- Don't overuse - save for key moments to maximize impact!
 
 ## Length and Rhythm
 - Short by default. If guests linger — offer **one more** bit from different category.
@@ -402,6 +509,77 @@ EN: "Pardon my rattling bones—could you say that again?"
                     "type": "object",
                     "properties": {},
                     "required": []
+                }
+            })
+
+        # Add UV light control if Meross is enabled
+        if self.meross_enabled and MEROSS_AVAILABLE and self.meross_email and self.meross_password:
+            self.tools.append({
+                "type": "function",
+                "name": "control_uv_light",
+                "description": "Controls the Aurora night light UV (ultraviolet) light. Supports blinking/flashing effects! Use for spooky glowing atmosphere - UV light makes white things glow in the dark.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["on", "off", "blink"],
+                            "description": "Action: 'on' (turn on), 'off' (turn off), 'blink' (flash on/off repeatedly for scary effect)"
+                        },
+                        "duration": {
+                            "type": "number",
+                            "description": "Duration in seconds for 'blink' action (default: 10). How long to keep blinking."
+                        },
+                        "interval": {
+                            "type": "number",
+                            "description": "Interval in seconds between blinks (default: 0.5). Faster = more intense effect."
+                        }
+                    },
+                    "required": ["action"]
+                }
+            })
+
+        # Add Smart Flood Light control if enabled
+        if self.flood_light_enabled and TINYTUYA_AVAILABLE and self.flood_light:
+            self.tools.append({
+                "type": "function",
+                "name": "control_flood_light",
+                "description": "Controls Smart Flood Light with RGB colors and effects! Create spooky atmosphere with color sequences like red-white-red-white or single colors. Perfect for scary lighting effects!",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["on", "off", "color", "sequence", "blink"],
+                            "description": "Action: 'on'=turn on, 'off'=turn off, 'color'=set single color, 'sequence'=play color sequence, 'blink'=flash on/off"
+                        },
+                        "color": {
+                            "type": "string",
+                            "enum": ["red", "green", "blue", "purple", "orange", "yellow", "cyan", "magenta", "white"],
+                            "description": "Color name for 'color' action"
+                        },
+                        "sequence": {
+                            "type": "array",
+                            "items": {
+                                "type": "string",
+                                "enum": ["red", "green", "blue", "purple", "orange", "yellow", "cyan", "magenta", "white", "off"]
+                            },
+                            "description": "Sequence of colors for 'sequence' action, e.g. ['red', 'white', 'red', 'white'] for scary flashing effect"
+                        },
+                        "duration": {
+                            "type": "number",
+                            "description": "Duration in seconds for 'blink' action or time per color in sequence (default: blink=10s, sequence=1s per color)"
+                        },
+                        "interval": {
+                            "type": "number",
+                            "description": "Interval between changes in seconds (default: 0.5s for blink, 1s for sequence)"
+                        },
+                        "brightness": {
+                            "type": "number",
+                            "description": "Brightness 0-100% (default: 100)"
+                        }
+                    },
+                    "required": ["action"]
                 }
             })
 
@@ -508,16 +686,22 @@ EN: "Pardon my rattling bones—could you say that again?"
         """Receive audio from local microphone via PyAudio"""
         import pyaudio
 
-        # Get default input device info
-        default_input = self.pyaudio_instance.get_default_input_device_info()
-        mic_name = default_input.get('name', 'Unknown')
-        print(f"🎤 Using microphone: {mic_name}")
+        # Get input device info
+        if self.audio_input_device is not None:
+            device_info = self.pyaudio_instance.get_device_info_by_index(self.audio_input_device)
+            mic_name = device_info.get('name', 'Unknown')
+            print(f"🎤 Using microphone: {mic_name} (device {self.audio_input_device})")
+        else:
+            default_input = self.pyaudio_instance.get_default_input_device_info()
+            mic_name = default_input.get('name', 'Unknown')
+            print(f"🎤 Using microphone: {mic_name}")
 
         stream = self.pyaudio_instance.open(
             format=pyaudio.paInt16,
             channels=self.SPEAKER_CHANNELS,
             rate=self.SPEAKER_RATE,
             input=True,
+            input_device_index=self.audio_input_device,
             frames_per_buffer=self.SPEAKER_CHUNK
         )
 
@@ -541,7 +725,17 @@ EN: "Pardon my rattling bones—could you say that again?"
         """Send buffered audio to local speakers with jaw control"""
         import pyaudio
 
-        print("🔊 Starting audio playback (speakers)")
+        # Get output device info
+        if self.audio_output_device is not None:
+            device_info = self.pyaudio_instance.get_device_info_by_index(self.audio_output_device)
+            speaker_name = device_info.get('name', 'Unknown')
+            print(f"🔊 Using speaker: {speaker_name} (device {self.audio_output_device})")
+        else:
+            default_output = self.pyaudio_instance.get_default_output_device_info()
+            speaker_name = default_output.get('name', 'Unknown')
+            print(f"🔊 Using speaker: {speaker_name}")
+
+        print("🔊 Starting audio playback")
 
         # Initialize output stream
         self.output_stream = self.pyaudio_instance.open(
@@ -549,6 +743,7 @@ EN: "Pardon my rattling bones—could you say that again?"
             channels=self.SPEAKER_CHANNELS,
             rate=self.SPEAKER_RATE,
             output=True,
+            output_device_index=self.audio_output_device,
             stream_callback=None  # Non-blocking writes
         )
 
@@ -631,21 +826,39 @@ EN: "Pardon my rattling bones—could you say that again?"
 
         print("📷 [1/6] Starting camera capture...")
 
-        # Always reconnect to get fresh frame from RTSP
+        # Always reconnect to get fresh frame
         if self.camera:
             self.camera.release()
 
         start_connect = time.time()
-        self.camera = cv2.VideoCapture(self.camera_url, cv2.CAP_FFMPEG)
+
+        # Use appropriate backend based on camera type
+        if self.use_webcam:
+            # Use AVFoundation for webcam on macOS (no FFMPEG warning)
+            import platform
+            if platform.system() == "Darwin":  # macOS
+                self.camera = cv2.VideoCapture(self.camera_url, cv2.CAP_AVFOUNDATION)
+            else:
+                self.camera = cv2.VideoCapture(self.camera_url)
+        else:
+            # Use FFMPEG for RTSP streams
+            self.camera = cv2.VideoCapture(self.camera_url, cv2.CAP_FFMPEG)
+            # Set timeout for RTSP stream
+            self.camera.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
+            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         if not self.camera.isOpened():
             print("❌ Failed to open camera")
             return None
         connect_time = time.time() - start_connect
-        print(f"📷 [2/6] Camera opened: {connect_time:.2f}s")
+        print(f"📷 [2/7] Camera opened: {connect_time:.2f}s")
 
-        # Set timeout for RTSP stream
-        self.camera.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)
-        self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Webcam warm-up: skip first few frames (they're often black)
+        if self.use_webcam:
+            print(f"📷 [3/7] Warming up webcam...")
+            for _ in range(5):
+                self.camera.read()  # Discard first frames
+                time.sleep(0.1)
 
         start_read = time.time()
         ret, frame = self.camera.read()
@@ -653,20 +866,13 @@ EN: "Pardon my rattling bones—could you say that again?"
             print("❌ Failed to capture frame")
             return None
         read_time = time.time() - start_read
-        print(f"📷 [3/6] Frame captured: {read_time:.2f}s")
+        print(f"📷 [4/7] Frame captured: {read_time:.2f}s")
 
         # Get original resolution
         height, width = frame.shape[:2]
 
-        # Generate timestamp
+        # Generate timestamp for logging
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Save original to logs
-        start_save = time.time()
-        log_path_orig = os.path.join(self.logs_dir, f"camera_{timestamp}_original.jpg")
-        cv2.imwrite(log_path_orig, frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        save_time = time.time() - start_save
-        print(f"📷 [4/6] Saved original ({width}x{height}): {save_time:.2f}s")
 
         # Resize to 1280px for API
         start_resize = time.time()
@@ -681,16 +887,18 @@ EN: "Pardon my rattling bones—could you say that again?"
         resize_time = time.time() - start_resize
         print(f"📷 [5/6] Resized: {resize_time:.2f}s")
 
-        # Save API version and convert to base64
+        # Convert to base64 and optionally save
         start_encode = time.time()
-        log_path_api = os.path.join(self.logs_dir, f"camera_{timestamp}_sent.jpg")
-        cv2.imwrite(log_path_api, frame_for_api, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-        # Convert to base64
         _, buffer = cv2.imencode('.jpg', frame_for_api, [cv2.IMWRITE_JPEG_QUALITY, 85])
         image_base64 = base64.b64encode(buffer).decode('utf-8')
         encode_time = time.time() - start_encode
         print(f"📷 [6/6] Encoded to base64: {encode_time:.2f}s")
+
+        # Save sent image to logs (if enabled)
+        if self.save_camera_screenshots:
+            log_path = os.path.join(self.logs_dir, f"camera_{timestamp}.jpg")
+            cv2.imwrite(log_path, frame_for_api, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            print(f"💾 Saved to: {log_path}")
 
         total_time = time.time() - start_total
         print(f"📷 ✅ Total camera capture time: {total_time:.2f}s")
@@ -786,6 +994,174 @@ EN: "Pardon my rattling bones—could you say that again?"
         print("🔇 Music stopped")
         return {"status": "stopped"}
 
+    async def init_meross_manager(self):
+        """Initialize Meross manager if not already initialized"""
+        if not MEROSS_AVAILABLE or not self.meross_email or not self.meross_password:
+            return False
+
+        if self.meross_manager is not None:
+            return True  # Already initialized
+
+        try:
+            print("🔄 Initializing Meross manager...")
+            # Setup HTTP client
+            self.meross_http_client = await MerossHttpClient.async_from_user_password(
+                email=self.meross_email,
+                password=self.meross_password,
+                api_base_url="https://iotx-us.meross.com"
+            )
+
+            # Setup manager
+            self.meross_manager = MerossManager(http_client=self.meross_http_client)
+            await self.meross_manager.async_init()
+            await self.meross_manager.async_device_discovery()
+            print("✅ Meross manager initialized")
+            return True
+
+        except Exception as e:
+            print(f"❌ Failed to initialize Meross: {e}")
+            return False
+
+    async def control_uv_light(self, action, duration=10, interval=0.5):
+        """Control Aurora UV light via Meross with blink support"""
+        if not await self.init_meross_manager():
+            return {"error": "Meross not available"}
+
+        try:
+            # Find Aurora device
+            devices = self.meross_manager.find_devices(device_name=self.aurora_device_name)
+
+            if not devices:
+                print(f"❌ Device '{self.aurora_device_name}' not found")
+                return {"error": f"Device '{self.aurora_device_name}' not found"}
+
+            device = devices[0]
+            await device.async_update()
+
+            # Perform action
+            if action == "on":
+                await device.async_turn_on()
+                print(f"💡 UV light turned ON")
+                return {"status": "on", "device": self.aurora_device_name}
+            elif action == "off":
+                await device.async_turn_off()
+                print(f"💡 UV light turned OFF")
+                return {"status": "off", "device": self.aurora_device_name}
+            elif action == "blink":
+                print(f"⚡ UV light blinking for {duration}s (interval: {interval}s)")
+                start_time = asyncio.get_event_loop().time()
+                blink_count = 0
+                while (asyncio.get_event_loop().time() - start_time) < duration:
+                    await device.async_turn_on()
+                    await asyncio.sleep(interval)
+                    await device.async_turn_off()
+                    await asyncio.sleep(interval)
+                    blink_count += 1
+                # Leave on after blinking
+                await device.async_turn_on()
+                print(f"💡 UV light blinked {blink_count} times, now ON")
+                return {"status": "blinked", "device": self.aurora_device_name, "count": blink_count}
+            else:
+                return {"error": f"Invalid action: {action}"}
+
+        except Exception as e:
+            print(f"❌ Failed to control UV light: {e}")
+            return {"error": str(e)}
+
+    async def control_flood_light(self, action, color=None, sequence=None, duration=None, interval=None, brightness=100):
+        """Control Smart Flood Light with colors and sequences"""
+        if not self.flood_light:
+            return {"error": "Flood light not available"}
+
+        # Color mapping
+        colors = {
+            "red": (255, 0, 0),
+            "green": (0, 255, 0),
+            "blue": (0, 0, 255),
+            "purple": (128, 0, 128),
+            "orange": (255, 165, 0),
+            "yellow": (255, 255, 0),
+            "cyan": (0, 255, 255),
+            "magenta": (255, 0, 255),
+            "white": (255, 255, 255),
+            "off": None
+        }
+
+        try:
+            # Set brightness
+            if brightness != 100:
+                self.flood_light.set_brightness_percentage(brightness)
+                await asyncio.sleep(0.1)
+
+            if action == "on":
+                self.flood_light.turn_on()
+                print(f"💡 Flood light turned ON")
+                return {"status": "on"}
+
+            elif action == "off":
+                self.flood_light.turn_off()
+                print(f"💡 Flood light turned OFF")
+                return {"status": "off"}
+
+            elif action == "color":
+                if not color or color not in colors:
+                    return {"error": f"Invalid color: {color}"}
+                self.flood_light.turn_on()
+                await asyncio.sleep(0.1)
+                r, g, b = colors[color]
+                self.flood_light.set_colour(r, g, b)
+                print(f"💡 Flood light set to {color.upper()} ({r},{g},{b})")
+                return {"status": "color", "color": color}
+
+            elif action == "sequence":
+                if not sequence or len(sequence) == 0:
+                    return {"error": "Empty sequence"}
+
+                # Default interval for sequence
+                seq_interval = interval if interval is not None else 1.0
+
+                print(f"🎨 Playing color sequence: {' → '.join(sequence)}")
+                for color_name in sequence:
+                    if color_name not in colors:
+                        continue
+                    if color_name == "off":
+                        self.flood_light.turn_off()
+                    else:
+                        self.flood_light.turn_on()
+                        await asyncio.sleep(0.1)
+                        r, g, b = colors[color_name]
+                        self.flood_light.set_colour(r, g, b)
+                    await asyncio.sleep(seq_interval)
+
+                print(f"✅ Sequence completed ({len(sequence)} colors)")
+                return {"status": "sequence", "count": len(sequence)}
+
+            elif action == "blink":
+                blink_duration = duration if duration is not None else 10
+                blink_interval = interval if interval is not None else 0.5
+
+                print(f"⚡ Flood light blinking for {blink_duration}s (interval: {blink_interval}s)")
+                start_time = asyncio.get_event_loop().time()
+                blink_count = 0
+                while (asyncio.get_event_loop().time() - start_time) < blink_duration:
+                    self.flood_light.turn_on()
+                    await asyncio.sleep(blink_interval)
+                    self.flood_light.turn_off()
+                    await asyncio.sleep(blink_interval)
+                    blink_count += 1
+
+                # Leave on after blinking
+                self.flood_light.turn_on()
+                print(f"💡 Flood light blinked {blink_count} times, now ON")
+                return {"status": "blinked", "count": blink_count}
+
+            else:
+                return {"error": f"Invalid action: {action}"}
+
+        except Exception as e:
+            print(f"❌ Failed to control flood light: {e}")
+            return {"error": str(e)}
+
     async def handle_function_call(self, function_name, arguments):
         """Handle function calls from OpenAI"""
         print(f"🔧 Function call: {function_name}({arguments})")
@@ -796,6 +1172,21 @@ EN: "Pardon my rattling bones—could you say that again?"
             return self.play_scary_music(arguments.get("filename"))
         elif function_name == "stop_music":
             return self.stop_music()
+        elif function_name == "control_uv_light":
+            return await self.control_uv_light(
+                action=arguments.get("action"),
+                duration=arguments.get("duration", 10),
+                interval=arguments.get("interval", 0.5)
+            )
+        elif function_name == "control_flood_light":
+            return await self.control_flood_light(
+                action=arguments.get("action"),
+                color=arguments.get("color"),
+                sequence=arguments.get("sequence"),
+                duration=arguments.get("duration"),
+                interval=arguments.get("interval"),
+                brightness=arguments.get("brightness", 100)
+            )
 
         return {"error": "Unknown function"}
 
@@ -1198,10 +1589,13 @@ EN: "Pardon my rattling bones—could you say that again?"
                             asyncio.create_task(self.receive_from_openai())
                         ]
 
-                    await asyncio.gather(*tasks)
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
             except KeyboardInterrupt:
                 print("\n👋 Shutting down gracefully...")
+                # Cancel all running tasks
+                for task in tasks:
+                    task.cancel()
                 break
             except Exception as e:
                 reconnect_attempts += 1
@@ -1219,26 +1613,74 @@ EN: "Pardon my rattling bones—could you say that again?"
                     except Exception as mqtt_error:
                         print(f"⚠️  MQTT reconnect failed: {mqtt_error}")
 
+        # Cleanup resources
+        print("🧹 Cleaning up...")
+
+        # Close websocket
+        if self.websocket:
+            try:
+                await self.websocket.close()
+                print("✅ WebSocket closed")
+            except:
+                pass
+
+        # Release camera
+        if self.camera:
+            try:
+                self.camera.release()
+                print("✅ Camera released")
+            except:
+                pass
+
+        # Stop MQTT
+        if self.enable_mqtt:
+            try:
+                self.mqtt_client.loop_stop()
+                self.mqtt_client.disconnect()
+                print("✅ MQTT disconnected")
+            except:
+                pass
+
+        # Stop pygame mixer
+        try:
+            pygame.mixer.quit()
+            print("✅ Audio mixer stopped")
+        except:
+            pass
+
+        # Cleanup Meross connection
+        if self.meross_manager is not None:
+            try:
+                self.meross_manager.close()
+                if self.meross_http_client is not None:
+                    await self.meross_http_client.async_logout()
+                print("✅ Meross connection closed")
+            except Exception as e:
+                print(f"⚠️  Meross cleanup error: {e}")
+
+        print("👋 Goodbye!")
+
 async def main():
+    # Read defaults from .env file
+    output_mode_default = os.getenv("OUTPUT_MODE", "esp32_udp")
+    enable_camera_default = os.getenv("ENABLE_CAMERA", "true").lower() == "true"
+    enable_mqtt_default = os.getenv("ENABLE_MQTT", "true").lower() == "true"
+    enable_jaw_default = os.getenv("ENABLE_JAW", "true").lower() == "true"
+    enable_eyes_default = os.getenv("ENABLE_EYES", "true").lower() == "true"
+
     parser = argparse.ArgumentParser(
         description="Franky - AI-Powered Halloween Talking Skull",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with ESP32 hardware (default, logging enabled)
+  # Run with configuration from .env
   python3 franky.py
 
   # Use different voice
   python3 franky.py --voice echo
 
-  # Test without hardware (speakers only)
+  # Override .env settings via command line
   python3 franky.py --output speakers --no-camera --no-mqtt
-
-  # Disable conversation logging
-  python3 franky.py --no-log-conversation
-
-  # Custom configuration
-  python3 franky.py --esp32-ip 192.168.1.50 --mqtt-server 192.168.1.100
         """
     )
 
@@ -1255,9 +1697,9 @@ Examples:
     parser.add_argument(
         "--output",
         type=str,
-        default="esp32_udp",
+        default=output_mode_default,
         choices=["esp32_udp", "speakers"],
-        help="Audio output destination: esp32_udp (default) or speakers"
+        help=f"Audio output destination (default from .env: {output_mode_default})"
     )
 
     # Hardware toggles
@@ -1265,8 +1707,8 @@ Examples:
         "--enable-camera",
         dest="enable_camera",
         action="store_true",
-        default=True,
-        help="Enable camera vision (default: enabled)"
+        default=enable_camera_default,
+        help=f"Enable camera vision (default from .env: {enable_camera_default})"
     )
     parser.add_argument(
         "--no-camera",
@@ -1279,8 +1721,8 @@ Examples:
         "--enable-mqtt",
         dest="enable_mqtt",
         action="store_true",
-        default=True,
-        help="Enable MQTT for jaw/eyes control (default: enabled)"
+        default=enable_mqtt_default,
+        help=f"Enable MQTT for jaw/eyes control (default from .env: {enable_mqtt_default})"
     )
     parser.add_argument(
         "--no-mqtt",
@@ -1293,8 +1735,8 @@ Examples:
         "--enable-jaw",
         dest="enable_jaw",
         action="store_true",
-        default=True,
-        help="Enable jaw movement control (default: enabled)"
+        default=enable_jaw_default,
+        help=f"Enable jaw movement control (default from .env: {enable_jaw_default})"
     )
     parser.add_argument(
         "--no-jaw",
@@ -1307,8 +1749,8 @@ Examples:
         "--enable-eyes",
         dest="enable_eyes",
         action="store_true",
-        default=True,
-        help="Enable LED eyes control (default: enabled)"
+        default=enable_eyes_default,
+        help=f"Enable LED eyes control (default from .env: {enable_eyes_default})"
     )
     parser.add_argument(
         "--no-eyes",
@@ -1380,7 +1822,16 @@ Examples:
         mqtt_port_override=args.mqtt_port,
         log_conversation=args.log_conversation
     )
-    await bot.run()
+
+    try:
+        await bot.run()
+    except KeyboardInterrupt:
+        print("\n✅ Shutdown complete")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n👋 Goodbye!")
+        import sys
+        sys.exit(0)
